@@ -1,0 +1,9 @@
+#C-LION
+
+.idea/
+cmake-build-debug/
+
+
+#PY-CHARM
+
+.venv
