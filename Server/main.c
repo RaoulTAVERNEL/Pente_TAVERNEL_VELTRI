@@ -12,6 +12,7 @@
 #define PORT 55555 // Communication port
 #define MAX_CLIENTS 10 // Maximum number of simultaneous clients
 #define BUFFER_SIZE 1024 // Buffer size for chunked message handling
+#define USERNAME_MAX_LENGTH 32// Maximum length for username
 
 /* STATES */
 #define INITIAL_STATE 0
@@ -64,58 +65,65 @@ void closeconnection(client_t *client, fd_set *read_fds) {
 void sendpacket(client_t *client, const char *message) {
     unsigned char status = (strcmp(message, "Connection successful") == 0) ? 0 : 1;
     char response[BUFFER_SIZE];
-    int length = snprintf(response, sizeof(response), "%c%s\n", status, message);
+    int length = snprintf(response, sizeof(response), "%s\n", message); // Remove status from snprintf
 
     if (length < 0) {
         perror("ERROR formatting packet");
         return;
     }
+    // Debugging prints
 
-    printf("snprintf wrote %d bytes: %s\n", length, message);
-    printf("Preparing to send packet: %s\n", message);
 
-    ssize_t bytes_sent = write(client->fd, message, length);
+    // Pack the response with status and message length
+    unsigned char message_length = strlen(message);
+    char packed_response[BUFFER_SIZE];
+    packed_response[0] = status; // Set status byte
+    packed_response[1] = message_length; // Set message length
+    memcpy(packed_response + 2, message, message_length); // Copy message to the packed response
+
+    ssize_t bytes_sent = write(client->fd, packed_response, message_length + 2); // Send length + status + message
     if (bytes_sent == -1) {
         perror("ERROR sending packet");
     } else {
-        printf("Sent packet: %s\n", message);
+        printf("Sent packet: Status: %d, Length: %d, Message: %s\n", status, message_length, message);
     }
 }
+
 
 
 
 
 /* FUNCTION TO PROCESS COMMANDS FROM CLIENTS */
 void processcmd(int client_fd, client_t *client, char *buffer) {
-    int packet_type = (unsigned char)buffer[0]; // Assume the first byte is the packet type
+    unsigned char username_length = buffer[0]; // First byte: username length
+    char username[USERNAME_MAX_LENGTH + 1] = {0}; // +1 for null terminator
+    unsigned char password_length = buffer[1 + username_length]; // Next byte: password length
+    char password[USERNAME_MAX_LENGTH + 1] = {0}; // +1 for null terminator
 
-    switch (client->state) {
-        case INITIAL_STATE:
-            if (packet_type == PKT_CONNECT) {
-                char username[BUFFER_SIZE];
-                sscanf(buffer + 1, "%s", username); // Extract username
-                if (strcmp(username, "marie") == 0) {
-                    printf("Client authenticated successfully.\n");
-                    client->state = INITIAL_STATE; // Transition to connected state
-                    sendpacket(client, "Connection successful");
-                } else {
-                    printf("Authentication failed.\n");
-                    sendpacket(client, "Connection failed");
-                }
-            }
-            break;
+    // Copy username from buffer
+    memcpy(&username_length, buffer, sizeof(username_length));
 
-        case CONNECTED_STATE:
-            // Placeholder for handling commands in connected state
-            printf("Client in connected state, received data: %s\n", buffer + 1);
-            break;
+    memcpy(username, buffer + 1, username_length);
+    username[username_length] = '\0'; // Terminer la chaîne
 
-        default:
-            printf("Unknown state.\n");
-            break;
+    memcpy(&password_length, buffer + 1 + USERNAME_MAX_LENGTH, sizeof(password_length));
+    memcpy(password, buffer + 2 + USERNAME_MAX_LENGTH, password_length);
+    password[password_length] = '\0'; // Terminer la chaîne
+
+    printf("Received username: '%s' with length %d\n", username, username_length);
+    printf("Received password: '%s' with length %d\n", password, password_length);
+
+
+    // Check username and password
+    if (strcmp(username, "marie") == 0 && strcmp(password, "raoul") == 0) {
+        printf("Client authenticated successfully.\n");
+        client->state = CONNECTED_STATE; // Transition to connected state
+        sendpacket(client, "Connection successful");
+    } else {
+        printf("Authentication failed.\n");
+        sendpacket(client, "Connection failed");
     }
 }
-
 /* MAIN SERVER FUNCTION */
 int main(int argc, char *argv[]) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0); // Create the server socket
@@ -206,7 +214,7 @@ int main(int argc, char *argv[]) {
                     ssize_t bytes_read = read(i, buffer, BUFFER_SIZE - 1); // Read the client's message
 
                     if (bytes_read <= 0) {
-                        // If the client disconnected or there was an error
+                        // Si le client s'est déconnecté ou s'il y a eu une erreur
                         if (bytes_read == 0) {
                             printf("Client disconnected.\n");
                         } else {
@@ -214,7 +222,7 @@ int main(int argc, char *argv[]) {
                         }
                         for (int j = 0; j < MAX_CLIENTS; ++j) {
                             if (clients[j].fd == i) {
-                                closeconnection(&clients[j], &read_fds); // Close the connection properly
+                                closeconnection(&clients[j], &read_fds); // Fermer la connexion correctement
                                 break;
                             }
                         }
@@ -222,6 +230,8 @@ int main(int argc, char *argv[]) {
                         // Process the received command
                         for (int j = 0; j < MAX_CLIENTS; ++j) {
                             if (clients[j].fd == i) {
+                                printf("Raw buffer: %.*s\n", (int)bytes_read, buffer); // Afficher le contenu brut du buffer
+
                                 processcmd(i, &clients[j], buffer);
                                 break;
                             }

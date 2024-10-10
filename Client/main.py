@@ -1,6 +1,9 @@
 import socket
 import struct
 
+# Define packet constants
+PKT_CONNECT = 1
+
 # Define the server address and port
 SERVER_HOST = '127.0.0.1'  # Localhost (assuming the server is running on the same machine)
 SERVER_PORT = 55555  # Port to connect to
@@ -8,36 +11,39 @@ SERVER_PORT = 55555  # Port to connect to
 # Packet format constants
 USERNAME_MAX_LENGTH = 32  # Maximum length for username
 
-def pack_credentials(username):
-    """
-    Pack the username into a binary format.
-    The structure is as follows:
-    [username_length (1 byte)][username (up to 32 bytes)]
-    """
-    username_bytes = username.encode()[:USERNAME_MAX_LENGTH]  # Limit to max length
+def pack_credentials(username, password):
+    username_bytes = username.encode('utf-8')[:USERNAME_MAX_LENGTH]
+    password_bytes = password.encode('utf-8')[:USERNAME_MAX_LENGTH]
 
     username_length = len(username_bytes)
+    password_length = len(password_bytes)
 
     # Pack the data
     packed_data = struct.pack(
-        f"!B{USERNAME_MAX_LENGTH}s",
-        1,
-        username_bytes.ljust(USERNAME_MAX_LENGTH, b'\x00')
+        f"!B{USERNAME_MAX_LENGTH}sB{USERNAME_MAX_LENGTH}s",
+        username_length,
+        username_bytes.ljust(USERNAME_MAX_LENGTH, b'\x00'),  # Remplir avec des zéros
+        password_length,
+        password_bytes.ljust(USERNAME_MAX_LENGTH, b'\x00')   # Remplir avec des zéros
     )
+
     return packed_data
 
 
+
+
+
 def unpack_response(response):
-    if len(response) < 1:
+    if len(response) < 2:  # Check for at least status and length bytes
         return None, "No response received"
 
-    # Unpack status byte
+    # Unpack status and message length
     status = response[0]
-    print(f"Raw message received: {response[1:]}")  # Debugging line
-    message = response[1:].decode().strip()
-    print(f"Decoded message: '{message}'")  # Debugging line
+    message_length = response[1]
+    message = response[2:2 + message_length].decode().strip()  # Extract message based on length
 
     return status, message
+
 
 def main():
     # Create a TCP/IP socket
@@ -58,8 +64,13 @@ def main():
             print("Exiting...")
             break
 
-        # Pack the username
-        packed_message = pack_credentials(username)
+        # Ask for the password
+        password = input("Enter password: ")
+        print(f"Password length: {len(password)}")  # Debug: Afficher la longueur du mot de passe
+
+        packed_message = pack_credentials(username, password)
+        print(f"Packed message: {packed_message}")  # Afficher le message packagé
+        print(f"Packed message length: {len(packed_message)}")  # Afficher la longueur du message packagé
 
         try:
             # Send the packed username to the server
@@ -80,7 +91,6 @@ def main():
 
     # Close the socket after exiting the loop
     client_socket.close()
-
 
 if __name__ == "__main__":
     main()
