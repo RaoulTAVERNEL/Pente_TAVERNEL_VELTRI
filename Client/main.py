@@ -2,35 +2,41 @@ import socket
 import struct
 
 # Define packet constants
-PKT_CONNECT = 1
+PKT_CONNECT = 10
+PKT_LIST_GAME = 21
+PKT_CREATE_GAME = 23
+PKT_JOIN = 42
 
 # Define the server address and port
 SERVER_HOST = '127.0.0.1'  # Localhost (assuming the server is running on the same machine)
 SERVER_PORT = 55555  # Port to connect to
 
 # Packet format constants
-USERNAME_MAX_LENGTH = 32  # Maximum length for username
+USERNAME_MAX_LENGTH = 16  # Maximum length for username
+PASSWORD_MAX_LENGTH = 16  # Maximum length for password
+
 
 def pack_credentials(username, password):
     username_bytes = username.encode('utf-8')[:USERNAME_MAX_LENGTH]
-    password_bytes = password.encode('utf-8')[:USERNAME_MAX_LENGTH]
+    password_bytes = password.encode('utf-8')[:PASSWORD_MAX_LENGTH]
 
+    # Calculate the lengths for packing
     username_length = len(username_bytes)
     password_length = len(password_bytes)
 
     # Pack the data
     packed_data = struct.pack(
-        f"!B{USERNAME_MAX_LENGTH}sB{USERNAME_MAX_LENGTH}s",
+        f"!B{USERNAME_MAX_LENGTH}sB{PASSWORD_MAX_LENGTH}s",
         username_length,
-        username_bytes.ljust(USERNAME_MAX_LENGTH, b'\x00'),  # Remplir avec des zéros
+        username_bytes.ljust(USERNAME_MAX_LENGTH, b'\x00'),  # Fill with zeros
         password_length,
-        password_bytes.ljust(USERNAME_MAX_LENGTH, b'\x00')   # Remplir avec des zéros
+        password_bytes.ljust(PASSWORD_MAX_LENGTH, b'\x00')   # Fill with zeros
     )
 
-    return packed_data
+    # Prepend the packet type to the packed data
+    final_packet = struct.pack("!B", PKT_CONNECT) + packed_data
 
-
-
+    return final_packet
 
 
 def unpack_response(response):
@@ -40,6 +46,11 @@ def unpack_response(response):
     # Unpack status and message length
     status = response[0]
     message_length = response[1]
+
+    # Ensure we have enough data for the message
+    if len(response) < 2 + message_length:
+        return None, "Incomplete response received"
+
     message = response[2:2 + message_length].decode().strip()  # Extract message based on length
 
     return status, message
@@ -66,14 +77,14 @@ def main():
 
         # Ask for the password
         password = input("Enter password: ")
-        print(f"Password length: {len(password)}")  # Debug: Afficher la longueur du mot de passe
+        print(f"Password length: {len(password)}")  # Debug: Display the length of the password
 
         packed_message = pack_credentials(username, password)
-        print(f"Packed message: {packed_message}")  # Afficher le message packagé
-        print(f"Packed message length: {len(packed_message)}")  # Afficher la longueur du message packagé
+        print(f"Packed message: {packed_message}")  # Display the packed message
+        print(f"Packed message length: {len(packed_message)}")  # Display the packed message length
 
         try:
-            # Send the packed username to the server
+            # Send the packed username and password to the server
             client_socket.sendall(packed_message)
 
             # Receive the server's response
@@ -91,6 +102,7 @@ def main():
 
     # Close the socket after exiting the loop
     client_socket.close()
+
 
 if __name__ == "__main__":
     main()
