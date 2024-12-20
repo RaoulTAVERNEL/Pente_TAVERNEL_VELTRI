@@ -16,15 +16,21 @@
 #define AUTH_MAX_LENGTH 16
 #define MAX_GAMES 5
 volatile sig_atomic_t server_running = 1; // Server running state variable
+int srand_flag = 0;
+
+
 
 /*********************************************/
 /*                  STATES                   */
 /*********************************************/
 
 #define INITIAL_STATE 1 // Client is disconnected
-#define CONNECTED_STATE 2 // Client is authenticated
-#define LOBBY_STATE 3 // Client has created a game and is waiting for 2nd player
-#define ACTIVE_GAME_STATE 4 // Client is in a running game
+#define LOBBY_STATE 2 // Client is authenticated
+#define INACTIVE_GAME_STATE 3 // Client has created a game and is waiting for 2nd player
+#define PLAYING_STATE 4 // Client is in a running game and is making a move
+#define WAITING_STATE 5 // Client is in a running game and waiting for opponent's move
+
+
 
 /*********************************************/
 /*                  PACKETS                  */
@@ -35,10 +41,11 @@ volatile sig_atomic_t server_running = 1; // Server running state variable
 #define PKT_LIST_GAME 21
 #define PKT_DISCONNECT 22
 #define PKT_CREATE_GAME 23
-#define PKT_QUIT 31
-#define PKT_ABANDON 40
+#define PKT_JOIN 24
+#define PKT_QUIT 30
+#define PKT_MOVE 40
 #define PKT_GAME_OVER 41
-#define PKT_JOIN 42
+#define PKT_ABANDON 50
 
 
 
@@ -46,7 +53,10 @@ volatile sig_atomic_t server_running = 1; // Server running state variable
 /*              STRUCTURE CLIENT             */
 /*********************************************/
 
-typedef struct {
+typedef struct client client_t;
+typedef struct game game_t;
+
+typedef struct client {
     int fd; // Client socket descriptor
     int state; // Current state of the client
     char username[AUTH_MAX_LENGTH];
@@ -55,6 +65,7 @@ typedef struct {
     int defeats;
     int games_played;
     int score;
+    game_t *current_game; // Pointer to the current game
 } client_t;
 
 
@@ -63,11 +74,11 @@ typedef struct {
 /*               STRUCTURE GAME              */
 /*********************************************/
 
-typedef struct {
+typedef struct game {
     int id;
     client_t *player1; // Pointer to player 1
     client_t *player2; // Pointer to player 2
-    int status; // 0: Waiting for 2nd player, 1: Game ongoing, 2: Game ended
+    int status; // 1: Waiting for 2nd player, 2: Game ongoing
 } game_t;
 
 game_t games[MAX_GAMES]; // List of all games (active and inactive)
@@ -85,12 +96,15 @@ void closeconnection(client_t *client, fd_set *read_fds, int *active_client_coun
 void sendpacket(const client_t *client, unsigned char status, const char *message); // Send packet to client
 void print_buffer(const char *buffer, size_t length); // FONCTION DEBUG A SUPPRIMER APRES LES TESTS
 void authenticate(client_t *client, const char *buffer); // Authenticate client
+void logout(client_t *client); // Disconnect client
 void list_games(const client_t *client); // List all games (active and inactive)
 void create_game(client_t *client); // Create a new game
 void join_game(client_t *client, int game_id); // Join a game
+void assign_turns(int game_id, client_t *client, client_t *player1); // Determine 1st player in a new game
 void update_player_stats(client_t *winner, client_t *loser); // Update players stats after game ended
 void determine_winner(int game_id); // Manage combat phase between players (randomize right now)
 void delete_game(int game_id); // Delete an inactive game the player just made (quitting lobby)
+void abandon(client_t *client, int game_id); // Abandon a game
 int find_game_id_by_client(const client_t *client); // Get game ID by client
 void process_cmd(client_t *client, const char *buffer, fd_set *read_fds, int *active_client_count); // Process commands using a switch structure
 
@@ -101,8 +115,6 @@ void process_cmd(client_t *client, const char *buffer, fd_set *read_fds, int *ac
 /*********************************************/
 
 int main() {
-    srand(time(NULL));
-
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_len = sizeof(client_addr);
@@ -189,7 +201,7 @@ int main() {
 
                 if (bytes_read > 0) { // Read from client successful
                     buffer[bytes_read] = '\0'; // Null-terminate the buffer for safety
-                    printf("Received data from client (fd: %d).\n", clients[i].fd);
+                    printf("Received data from client (fd: %d, username: %s, state: %d).\n", clients[i].fd, clients[i].username, clients[i].state);
                     process_cmd(&clients[i], buffer, &read_fds, &active_client_count);
                 } else if (bytes_read == 0) { // Client disconnected
                     printf("Client (fd: %d) disconnected.\n", clients[i].fd);
@@ -257,7 +269,7 @@ void closeconnection(client_t *client, fd_set *read_fds, int *active_client_coun
     (*active_client_count)--;
     printf("Active clients after disconnection: %d\n", *active_client_count);
 
-    client->fd = 0;
+    memset(client, 0, sizeof(client_t));
     client->state = INITIAL_STATE;
 }
 
@@ -326,11 +338,33 @@ void authenticate(client_t *client, const char *buffer) {
         client->defeats = 0; // Set defeats to 0 for new player
         client->games_played = 0; // Set games played to 0 for new player
         client->score = 1000; // Set score to 1000 for new player
-        client->state = CONNECTED_STATE;  // Change client state to CONNECTED_STATE
+        client->state = LOBBY_STATE;  // Change client state to LOBBY_STATE
         sendpacket(client, 0, "Connection successful");  // Send successful authentication packet to client
     } else {
         sendpacket(client, 1, "Connection failed");  // Send failed authentication packet to client
     }
+}
+
+
+
+/* FUNCTION TO DISCONNECT */
+
+void logout(client_t *client) {
+    if (client == NULL) {
+        printf("Error: Client is NULL.\n");
+        return;
+    }
+
+    memset(client->username, 0, sizeof(client->username));
+    memset(client->password, 0, sizeof(client->password));
+    client->victories = 0;
+    client->defeats = 0;
+    client->games_played = 0;
+    client->score = 0;
+    client->current_game = NULL;
+    client->state = INITIAL_STATE;
+
+    sendpacket(client, 0, "Disconnection successful");
 }
 
 
@@ -345,19 +379,20 @@ void list_games(const client_t *client) {
         int available_games = 0;
 
         for (int i = 0; i < game_counter; i++) { // List all game (active and inactive)
-            if (games[i].status == 0) { // If game[i] is inactive (meaning another player can join the game)
+            if (games[i].status == 1) { // If game[i] exists and player 1 is waiting for 2nd player
                 char game_info[BUFFER_SIZE];
                 snprintf(game_info, sizeof(game_info), "Game %d: %s (waiting)\n", games[i].id, games[i].player1->username);
+                strcat(list, game_info);
+                available_games++;
+            }else if (games[i].status ==2) { // If game[i] exists and both players are in it
+                char game_info[BUFFER_SIZE];
+                snprintf(game_info, sizeof(game_info), "Game %d: %s (full)\n", games[i].id, games[i].player1->username);
                 strcat(list, game_info);
                 available_games++;
             }
         }
 
-        if (available_games == 0) { // If there's no inactive game at the moment
-            sendpacket(client, 1, "No game available");
-        } else {
-            sendpacket(client, 0, list); // Send list games packet to client
-        }
+        sendpacket(client, 0, list); // Send list games packet to client
     }
 }
 
@@ -370,9 +405,9 @@ void create_game(client_t *client) {
         games[game_counter].id = game_counter + 1; // Set ID game
         games[game_counter].player1 = client; // Set the maker of the game to player 1
         games[game_counter].player2 = NULL; // Second player is set to null
-        games[game_counter].status = 0; // Waiting 2nd player
+        games[game_counter].status = 1; // Waiting 2nd player
         game_counter++;
-        client->state = LOBBY_STATE;
+        client->state = INACTIVE_GAME_STATE;
         sendpacket(client, 0, "New game created. Waiting for another player to start the game...");
     } else {
         sendpacket(client, 1, "Game creation failed: Lobby full");
@@ -384,7 +419,7 @@ void create_game(client_t *client) {
 /* FUNCTION TO JOIN A GAME */
 
 void join_game(client_t *client, int game_id) {
-    if (game_id > 0 && game_id <= game_counter && games[game_id - 1].status == 0) {
+    if (game_id > 0 && game_id <= game_counter && games[game_id - 1].status == 1) {
         client_t *player1 = games[game_id - 1].player1;
 
         if (games[game_id - 1].player1 == NULL) { // Check if game has a valid player 1 (creator)
@@ -392,20 +427,48 @@ void join_game(client_t *client, int game_id) {
             return;
         }
 
-        if (games[game_id - 1].player2 != NULL) { // Check if game has already 2 players
+        if (games[game_id - 1].player2 != NULL) { // Check if game already has 2 players
             sendpacket(client, 1, "Game join failed: Game is already full");
             return;
         }
 
-        games[game_id - 1].player2 = client; // Player 2 was null and now is the player who joined the game
-        games[game_id - 1].status = 1; // Game is now active
+        games[game_id - 1].player2 = client; // Assign client as Player 2
+        games[game_id - 1].status = 2; // Game is now active
 
-        games[game_id - 1].player1->state = ACTIVE_GAME_STATE;
-        games[game_id - 1].player2->state = ACTIVE_GAME_STATE;
+        client->current_game = &games[game_id - 1]; // Update client's current game
+        player1->current_game = &games[game_id - 1]; // Ensure Player 1 also has the game set
 
-        char response[BUFFER_SIZE];
+        assign_turns(game_id, client, player1);
+    }
+}
+
+
+
+/* FUNCTION TO DETERMINE 1ST PLAYER TO PLAY IN A NEW GAME */
+
+void assign_turns(int game_id, client_t *client, client_t *player1) {
+    if (!srand_flag) {
+        srand_flag = 1;
+        srand(time(NULL));
+    }
+
+    char response[BUFFER_SIZE];
+
+    if (rand() % 2 == 0) {
+        player1->state = PLAYING_STATE;
+        client->state = WAITING_STATE;
+
         snprintf(response, sizeof(response), "Joined game %d against %s", game_id, player1->username);
-        sendpacket(client, 0, response);
+        sendpacket(client, 3, response);
+
+        snprintf(response, sizeof(response), "%s has joined the game!", client->username);
+        sendpacket(player1, 2, response);
+    } else {
+        player1->state = WAITING_STATE;
+        client->state = PLAYING_STATE;
+
+        snprintf(response, sizeof(response), "Joined game %d against %s", game_id, player1->username);
+        sendpacket(client, 2, response);
 
         snprintf(response, sizeof(response), "%s has joined the game!", client->username);
         sendpacket(player1, 3, response);
@@ -420,9 +483,21 @@ void delete_game(int game_id) {
     int index = game_id - 1;
 
     if (index < 0 || index >= game_counter) {
-        printf("Invalid game ID.\n");
+        printf("Error: Invalid game ID %d.\n", game_id);
         return;
     }
+
+    game_t *game = &games[index];
+
+    if (game->player1 != NULL) {
+        game->player1->current_game = NULL;
+    }
+
+    if (game->player2 != NULL) {
+        game->player2->current_game = NULL;
+    }
+
+    memset(game, 0, sizeof(game_t));
 
     for (int i = index; i < game_counter - 1; i++) {
         games[i] = games[i + 1];
@@ -430,7 +505,7 @@ void delete_game(int game_id) {
 
     game_counter--;
 
-    printf("Game ID %d has been deleted.\n", game_id);
+    printf("Game ID %d has been successfully deleted.\n", game_id);
 }
 
 
@@ -440,8 +515,10 @@ void delete_game(int game_id) {
 void update_player_stats(client_t *winner, client_t *loser) {
     winner->victories += 1;
     winner->score += 10;
+    winner->games_played++;
     loser->defeats += 1;
     loser->score -= 10;
+    loser->games_played++;
 }
 
 
@@ -449,15 +526,12 @@ void update_player_stats(client_t *winner, client_t *loser) {
 /* FUNCTION TO DETERMINE WINNER (will be replaced with actual Pente game rules later) */
 
 void determine_winner(int game_id) {
+    if (!srand_flag) {
+        srand_flag = 1;
+        srand(time(NULL));
+    }
     char win_message[BUFFER_SIZE];
     char lose_message[BUFFER_SIZE];
-
-    // RANDOMIZE WINNER BLOCK WILL BE DELETED IN THE FOLLOWING PROJECT
-    static int initialized = 0;
-    if (!initialized) {
-        srand(time(NULL));
-        initialized = 1;
-    }
 
     int winner = rand() % 2; // 0 or 1
 
@@ -469,35 +543,91 @@ void determine_winner(int game_id) {
 
         // Send message to player 1 (winner)
         snprintf(win_message, sizeof(win_message),
-                 "CONGRATZ U WON, %s! Your stats - Victories: %d, Defeats: %d, Score: %d.",
-                 player1->username, player1->victories, player1->defeats, player1->score);
+                 "CONGRATZ U WON, %s! Your stats - Victories: %d, Defeats: %d, Score: %d, Games played: %d .",
+                 player1->username, player1->victories, player1->defeats, player1->score, player1->games_played);
         sendpacket(player1, 0, win_message);
 
         // Send message to player 2 (loser)
         snprintf(lose_message, sizeof(lose_message),
-                 "OH NO YOU LOST, %s! Your stats - Victories: %d, Defeats: %d, Score: %d.",
-                 player2->username, player2->victories, player2->defeats, player2->score);
+                 "OH NO YOU LOST, %s! Your stats - Victories: %d, Defeats: %d, Score: %d, Games played: %d .",
+                 player2->username, player2->victories, player2->defeats, player2->score, player2->games_played);
         sendpacket(player2, 1, lose_message);
     } else { // Player 2 wins
         update_player_stats(player2, player1);
 
         // Send message to player 2 (winner)
         snprintf(win_message, sizeof(win_message),
-                 "CONGRATZ U WON, %s! Your stats - Victories: %d, Defeats: %d, Score: %d.",
-                 player2->username, player2->victories, player2->defeats, player2->score);
+                 "CONGRATZ U WON, %s! Your stats - Victories: %d, Defeats: %d, Score: %d, Games played: %d .",
+                 player2->username, player2->victories, player2->defeats, player2->score, player2->games_played);
         sendpacket(player2, 0, win_message);
 
         // Send message to player 1 (loser)
         snprintf(lose_message, sizeof(lose_message),
-                 "OH NO YOU LOST, %s! Your stats - Victories: %d, Defeats: %d, Score: %d.",
-                 player1->username, player1->victories, player1->defeats, player1->score);
+                 "OH NO YOU LOST, %s! Your stats - Victories: %d, Defeats: %d, Score: %d, Games played: %d .",
+                 player1->username, player1->victories, player1->defeats, player1->score, player1->games_played);
         sendpacket(player1, 1, lose_message);
     }
 
-    player2->state = CONNECTED_STATE;
-    player1->state = CONNECTED_STATE;
+    player2->state = LOBBY_STATE;
+    player1->state = LOBBY_STATE;
 
     delete_game(game_id);
+}
+
+
+
+/* FUNCTION ABANDON A GAME */
+
+void abandon(client_t *client, int game_id) {
+    int index = game_id - 1;
+
+    if (index < 0 || index >= game_counter) {
+        printf("Error: Invalid game ID %d.\n", game_id);
+        return;
+    }
+
+    game_t *game = &games[index];
+
+    if (game->player1 == NULL || game->player2 == NULL) {
+        printf("Error: Game ID %d is not valid for abandonment.\n", game_id);
+        return;
+    }
+
+    client_t *winner;
+    client_t *loser;
+
+    if (game->player1 == client) {
+        winner = game->player2;
+        loser = game->player1;
+    } else if (game->player2 == client) {
+        winner = game->player1;
+        loser = game->player2;
+    } else {
+        printf("Error: Client is not part of the game ID %d.\n", game_id);
+        return;
+    }
+
+    update_player_stats(winner, loser);
+
+    char win_message[BUFFER_SIZE];
+    char lose_message[BUFFER_SIZE];
+
+    snprintf(win_message, sizeof(win_message),
+             "CONGRATZ U WON, %s! Your stats - Victories: %d, Defeats: %d, Score: %d, Games played: %d.",
+             winner->username, winner->victories, winner->defeats, winner->score, winner->games_played);
+    sendpacket(winner, 0, win_message);
+
+    snprintf(lose_message, sizeof(lose_message),
+             "OH NO YOU LOST BY ABANDONMENT, %s! Your stats - Victories: %d, Defeats: %d, Score: %d, Games played: %d.",
+             loser->username, loser->victories, loser->defeats, loser->score, loser->games_played);
+    sendpacket(loser, 1, lose_message);
+
+    winner->state = LOBBY_STATE;
+    loser->state = LOBBY_STATE;
+
+    delete_game(game_id);
+
+    printf("Client %s abandoned the game ID %d.\n", client->username, game_id);
 }
 
 
@@ -531,8 +661,8 @@ void process_cmd(client_t *client, const char *buffer, fd_set *read_fds, int *ac
             }
             break;
 
-        case CONNECTED_STATE:
-            printf("Client is in CONNECTED_STATE. Received buffer: %02x\n", buffer[0]);
+        case LOBBY_STATE:
+            printf("Client is in LOBBY_STATE. Received buffer: %02x\n", buffer[0]);
             if (buffer[0] == PKT_LIST_GAME) { // List all games
                 printf("Packet type is PKT_LIST_GAME. Listing games...\n");
                 list_games(client);
@@ -552,40 +682,73 @@ void process_cmd(client_t *client, const char *buffer, fd_set *read_fds, int *ac
                     printf("Error: Invalid game ID.\n");
                     sendpacket(client, 1, "Game join failed: Invalid game ID");
                 }
-            } else {
-                printf("Unknown packet type in INITIAL_STATE: %02x\n", buffer[0]);
-                closeconnection(client, read_fds, active_client_count);
-            }
-
-        break;
-
-        case LOBBY_STATE:
-            printf("Client is in LOBBY_STATE. Received buffer: %02x\n", buffer[0]);
-
-            if (buffer[0] == PKT_QUIT) {  // Client quits lobby
-                int game_id = find_game_id_by_client(client);
-                printf("Packet type is PKT_QUIT. Client is exiting the lobby...\n");
-                delete_game(game_id);
-                sendpacket(client, 0, "Exited the lobby successfully.");
-                client->state = CONNECTED_STATE;
-                list_games(client);
-
+            } else if (buffer[0] == PKT_DISCONNECT) {
+                printf("Packet type is PKT_DISCONNECT. Disconnecting client...\n");
+                logout(client);
             } else {
                 printf("Unknown packet type in LOBBY_STATE: %02x\n", buffer[0]);
                 closeconnection(client, read_fds, active_client_count);
             }
+
             break;
 
-        case ACTIVE_GAME_STATE:
-            printf("Client is in ACTIVE_GAME_STATE.");
+        case INACTIVE_GAME_STATE:
+            printf("Client is in INACTIVE_GAME_STATE. Received buffer: %02x\n", buffer[0]);
 
-            if(buffer[0] == PKT_GAME_OVER) {
+            if (buffer[0] == PKT_QUIT) {  // Client quits inactive game
                 int game_id = find_game_id_by_client(client);
-                if (game_id != -1 && games[game_id - 1].status == 1) {
+                if (game_id != -1 && games[game_id - 1].status == 2) {
+                    printf("Packet type is PKT_QUIT. Client is exiting the inactive game...\n");
+                    delete_game(game_id);
+                    sendpacket(client, 0, "Exited the lobby successfully.");
+                    client->state = LOBBY_STATE;
+                    list_games(client);
+                }
+            } else {
+                printf("Unknown packet type in INACTIVE_GAME_STATE: %02x\n", buffer[0]);
+                closeconnection(client, read_fds, active_client_count);
+            }
+            break;
+
+        case PLAYING_STATE:
+            printf("Client is in PLAYING_STATE.");
+
+            if (buffer[0] == PKT_MOVE) {
+                printf("Packet type is PKT_MOVE. Moving client...\n");
+            } else if (buffer[0] == PKT_GAME_OVER) {
+                int game_id = find_game_id_by_client(client);
+                if (game_id != -1 && games[game_id - 1].status == 2) {
                     printf("Game is active. Determining the winner...\n");
                     determine_winner(game_id);
                 }
+            } else if (buffer[0] == PKT_ABANDON) {
+                int game_id = find_game_id_by_client(client);
+                printf("Packet type is PKT_ABANDON.");
+                if (game_id != -1 && games[game_id - 1].status == 2) {
+                    printf("Game is active. Abandoning the game...\n");
+                    abandon(client, game_id);
+                }
+            } else {
+                printf("Unknown packet type in PLAYING_STATE: %02x\n", buffer[0]);
+                closeconnection(client, read_fds, active_client_count);
             }
+
+            break;
+
+        case WAITING_STATE:
+            printf("Client is in WAITING_STATE.");
+
+            if (buffer[0] == PKT_ABANDON) {
+                int game_id = find_game_id_by_client(client);
+                if (game_id != -1 && games[game_id - 1].status == 2) {
+                    printf("Game is active. Abandoning the game...\n");
+                    abandon(client, game_id);
+                }
+            } else {
+                printf("Unknown packet type in WAITING_STATE: %02x\n", buffer[0]);
+                closeconnection(client, read_fds, active_client_count);
+            }
+
             break;
 
         default:

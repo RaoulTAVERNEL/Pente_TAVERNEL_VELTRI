@@ -15,9 +15,10 @@ AUTH_MAX_LENGTH = 16
 
 CURRENT_STATE = None
 INITIAL_STATE = 1
-CONNECTED_STATE = 2
-LOBBY_STATE = 3
-ACTIVE_GAME_STATE = 4
+LOBBY_STATE = 2
+INACTIVE_GAME_STATE = 3
+PLAYING_STATE = 4
+WAITING_STATE = 5
 
 
 
@@ -30,10 +31,11 @@ PKT_CONNECT = 10
 PKT_LIST_GAME = 21
 PKT_DISCONNECT = 22
 PKT_CREATE_GAME = 23
-PKT_QUIT = 31
-PKT_ABANDON = 40
+PKT_JOIN = 24
+PKT_QUIT = 30
+PKT_MOVE = 40
 PKT_GAME_OVER = 41
-PKT_JOIN = 42
+PKT_ABANDON = 50
 
 
 
@@ -89,7 +91,7 @@ def authenticate(client_socket):
         status, message = unpack_response(response)
         print(f"{message}")
         if status == 0:
-            CURRENT_STATE = CONNECTED_STATE
+            CURRENT_STATE = LOBBY_STATE
     except Exception as e:
         print(f"Error: {e}")
         client_socket.close()
@@ -102,7 +104,7 @@ def request_game_list(client_socket):
         client_socket.sendall(game_list_packet)
         response = client_socket.recv(BUFFER_SIZE)
         status, message = unpack_response(response)
-        print(f"{status} {message}\nTo create a new game, press \"-1\"")
+        print(f"{message}\nTo create a new game, press \"-1\"")
     except Exception as e:
         print(f"Error: {e}")
         client_socket.close()
@@ -118,7 +120,7 @@ def create_game(client_socket):
         status, message = unpack_response(response)
         print(f"{message}")
         if status == 0:
-            CURRENT_STATE = LOBBY_STATE
+            CURRENT_STATE = INACTIVE_GAME_STATE
     except Exception as e:
         print(f"Error: {e}")
         client_socket.close()
@@ -135,8 +137,12 @@ def join_game(client_socket, user_input):
             response = client_socket.recv(BUFFER_SIZE)
             status, message = unpack_response(response)
             print(f"{message}")
-            if status == 0:
-                CURRENT_STATE = ACTIVE_GAME_STATE
+            if status == 3:  # If another player joined the game
+                CURRENT_STATE = WAITING_STATE  # Move to the active game state
+                print("Waiting move from the other player")
+            elif status == 2:
+                CURRENT_STATE = PLAYING_STATE
+                print("Please make a move")
         except Exception as e:
             print(f"Error: {e}")
             client_socket.close()
@@ -145,7 +151,7 @@ def join_game(client_socket, user_input):
 
 
 
-def handle_lobby(client_socket):
+def handle_inactive_game(client_socket):
     global CURRENT_STATE
     try:
         response = client_socket.recv(BUFFER_SIZE)
@@ -154,7 +160,11 @@ def handle_lobby(client_socket):
             print(f"{message}")
 
             if status == 3:  # If another player joined the game
-                CURRENT_STATE = ACTIVE_GAME_STATE  # Move to the active game state
+                CURRENT_STATE = WAITING_STATE  # Move to the active game state
+                print("Waiting move from the other player")
+            elif status == 2:
+                CURRENT_STATE = PLAYING_STATE
+                print("Please make a move")
             else:
                 print(f"Unhandled status: {status}")
 
@@ -169,18 +179,31 @@ def determine_winner(client_socket):
     global CURRENT_STATE
     game_over_packet = struct.pack("!B", PKT_GAME_OVER)
     try:
-        sleep(2)
         client_socket.sendall(game_over_packet)
-        sleep(2)
         response = client_socket.recv(BUFFER_SIZE)
         status, message = unpack_response(response)
         print(f"{message}")
-        CURRENT_STATE = CONNECTED_STATE
-        print("Returning to connected state.")
+        CURRENT_STATE = LOBBY_STATE
+        print("Returning to the lobby.")
     except Exception as e:
         print(f"Error: {e}")
         client_socket.close()
         return
+
+def handle_waiting(client_socket):
+    global CURRENT_STATE
+
+    try:
+        response = client_socket.recv(BUFFER_SIZE)
+        if response:  # Only process if we received something
+            status, message = unpack_response(response)
+            print(f"{message}")
+            CURRENT_STATE = LOBBY_STATE
+            print("Returning to the lobby.")
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.close()
+        return  # Ensure we exit if there is an error
 
 
 
@@ -201,13 +224,13 @@ def main():
 
     CURRENT_STATE = INITIAL_STATE # Set initial state to disconnected
 
-    while True:
-        print(f"NUMERO ETAT : {CURRENT_STATE}") # DEBUG
+    print(f"Currently in STATE: {CURRENT_STATE}")
 
+    while True:
         if CURRENT_STATE == INITIAL_STATE:
             authenticate(client_socket)
 
-        elif CURRENT_STATE == CONNECTED_STATE:
+        elif CURRENT_STATE == LOBBY_STATE:
             request_game_list(client_socket)
             user_input = input()
             if user_input == "-1":
@@ -215,14 +238,15 @@ def main():
             else:
                 join_game(client_socket, user_input)
 
-        elif CURRENT_STATE == LOBBY_STATE:
-            handle_lobby(client_socket)
+        elif CURRENT_STATE == INACTIVE_GAME_STATE:
+            handle_inactive_game(client_socket)
 
-        elif CURRENT_STATE == ACTIVE_GAME_STATE:
+        elif CURRENT_STATE == PLAYING_STATE:
+            sleep(4)
             determine_winner(client_socket)
-            sleep(2)
 
-
+        elif CURRENT_STATE == WAITING_STATE:
+            handle_waiting(client_socket)
 
 if __name__ == "__main__":
     main()
