@@ -102,12 +102,13 @@ def request_game_list(client_socket):
         response = client_socket.recv(BUFFER_SIZE)
         status, message = unpack_response(response)
 
-        if status == 1:  # No game available
+        if status == 0:
+            print(f"{message}")
+            return message
+        elif status == 1:
             print("No game available")
             return "No game available"
-        else:
-            print(f"{message}\nTo create a new game, press \"-1\"")
-            return message  # Assuming the response contains the game list or game details
+
     except Exception as e:
         print(f"Error: {e}")
         client_socket.close()
@@ -122,11 +123,14 @@ def create_game(client_socket):
         response = client_socket.recv(BUFFER_SIZE)
         status, message = unpack_response(response)
         print(f"{message}")
+
         if status == 0:
             CURRENT_STATE = INACTIVE_GAME_STATE
+
     except Exception as e:
         print(f"Error: {e}")
         client_socket.close()
+        return ""
 
 
 def join_game(client_socket, game_id):
@@ -179,7 +183,6 @@ def main():
 
     CURRENT_STATE = INITIAL_STATE
 
-    # Create the GUI elements for login
     username_textbox = pygame_gui.elements.UITextEntryLine(
         relative_rect=pygame.Rect((300, 200), (200, 30)),
         manager=manager
@@ -194,14 +197,12 @@ def main():
         manager=manager
     )
 
-    # Create a label for authentication status
     auth_status_label = pygame_gui.elements.UILabel(
         relative_rect=pygame.Rect((300, 350), (200, 30)),
         text="",
         manager=manager
     )
 
-    # Authentication screen
     is_running = True
     while is_running:
         time_delta = clock.tick(60) / 1000.0
@@ -215,70 +216,37 @@ def main():
                 authenticate(client_socket, username_textbox, password_textbox, auth_status_label)
 
         manager.update(time_delta)
-        screen.blit(background, (0, 0))  # Effacer l'écran
+        screen.blit(background, (0, 0))
         manager.draw_ui(screen)
         pygame.display.update()
 
-        # Une fois authentifié, on passe au lobby
         if CURRENT_STATE == LOBBY_STATE:
             break
 
-    # Une fois authentifié, on affiche le lobby
     if CURRENT_STATE == LOBBY_STATE:
-        # Effacer l'écran avant d'afficher le lobby
-        screen.fill(pygame.Color('#000000'))  # Réinitialise l'écran à un fond noir
-        manager.clear_and_reset()  # Optionnel: réinitialise le gestionnaire d'UI
+        screen.fill(pygame.Color('#000000'))
+        manager.clear_and_reset()
 
-        # Envoie immédiatement la requête de la liste des jeux
-        game_list = request_game_list(client_socket)
-
+        # Créer les boutons une seule fois
+        create_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((150, 450), (200, 50)),
+            text="Create New Game",
+            manager=manager
+        )
+        logout_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((550, 450), (100, 50)),
+            text="Logout",
+            manager=manager
+        )
+        join_button = None
         is_running = True
-        join_button = None  # Initialiser join_button ici pour éviter l'erreur de variable avant affectation
-        last_request_time = pygame.time.get_ticks()  # Pour contrôler l'intervalle des requêtes
+        last_request_time = pygame.time.get_ticks()
 
         while is_running:
-            # Display active games
-            if pygame.time.get_ticks() - last_request_time >= 5000:  # 5000 ms = 5 secondes
+            # Mise à jour périodique de la liste des jeux
+            if pygame.time.get_ticks() - last_request_time >= 5000:
                 game_list = request_game_list(client_socket)
                 last_request_time = pygame.time.get_ticks()
-
-            if game_list == "No game available":
-                # Afficher un message si aucune partie n'est disponible
-                no_game_label = pygame_gui.elements.UILabel(
-                    relative_rect=pygame.Rect((300, 200), (200, 30)),
-                    text="No game available",
-                    manager=manager
-                )
-
-                # Créer seulement les boutons Create New Game et Logout
-                create_button = pygame_gui.elements.UIButton(
-                    relative_rect=pygame.Rect((150, 450), (200, 50)),
-                    text="Create New Game",
-                    manager=manager
-                )
-                logout_button = pygame_gui.elements.UIButton(
-                    relative_rect=pygame.Rect((550, 450), (100, 50)),
-                    text="Logout",
-                    manager=manager
-                )
-
-            else:
-                # Afficher les jeux disponibles et le bouton Join Game
-                join_button = pygame_gui.elements.UIButton(
-                    relative_rect=pygame.Rect((300, 450), (100, 50)),
-                    text="Join Game",
-                    manager=manager
-                )
-                create_button = pygame_gui.elements.UIButton(
-                    relative_rect=pygame.Rect((150, 450), (200, 50)),
-                    text="Create New Game",
-                    manager=manager
-                )
-                logout_button = pygame_gui.elements.UIButton(
-                    relative_rect=pygame.Rect((550, 450), (100, 50)),
-                    text="Logout",
-                    manager=manager
-                )
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -287,12 +255,18 @@ def main():
                 manager.process_events(event)
 
                 if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                    if event.ui_element == join_button:
-                        game_id = int(input("Enter the game ID to join: "))
-                        join_game(client_socket, game_id)
-
                     if event.ui_element == create_button:
                         create_game(client_socket)
+                        print(f"{CURRENT_STATE}")
+
+                    if event.ui_element == join_button:
+                        game_id = int(input("Enter the game ID to join: "))
+                        join_button = pygame_gui.elements.UIButton(
+                            relative_rect=pygame.Rect((300, 450), (100, 50)),
+                            text="Join Game",
+                            manager=manager
+                        )
+                        join_game(client_socket, game_id)
 
                     if event.ui_element == logout_button:
                         logout(client_socket)
@@ -302,6 +276,35 @@ def main():
             screen.blit(background, (0, 0))
             manager.draw_ui(screen)
             pygame.display.update()
+
+            if CURRENT_STATE == INACTIVE_GAME_STATE:
+                break
+
+    if CURRENT_STATE == INACTIVE_GAME_STATE:
+        screen.fill(pygame.Color('#000000'))
+        manager.clear_and_reset()
+        waiting_label = pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect((150, 250), (500, 50)),
+            text="New game created. Waiting for opponent...",
+            manager=manager
+        )
+
+        is_running = True
+        while is_running:
+            time_delta = clock.tick(60) / 1000.0
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    is_running = False  # Quit the game
+
+                manager.process_events(event)
+
+            manager.update(time_delta)
+            screen.blit(background, (0, 0))
+            manager.draw_ui(screen)
+            pygame.display.update()
+
+            # Add logic to transition to a new state if needed
+            # Example: Check if opponent joined, update CURRENT_STATE, and break
 
     client_socket.close()
 
