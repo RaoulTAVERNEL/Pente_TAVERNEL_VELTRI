@@ -378,21 +378,34 @@ void list_games(const client_t *client) {
         char list[BUFFER_SIZE] = "Available games:\n";
         int available_games = 0;
 
-        for (int i = 0; i < game_counter; i++) { // List all game (active and inactive)
-            if (games[i].status == 1) { // If game[i] exists and player 1 is waiting for 2nd player
+        for (int i = 0; i < game_counter; i++) {
+            if (games[i].status == 1 || games[i].status == 2) { // List active games
+                client_t *player1 = games[i].player1;
+                client_t *player2 = games[i].status == 2 ? games[i].player2 : NULL;
                 char game_info[BUFFER_SIZE];
-                snprintf(game_info, sizeof(game_info), "Game %d: %s (waiting)\n", games[i].id, games[i].player1->username);
-                strcat(list, game_info);
-                available_games++;
-            }else if (games[i].status ==2) { // If game[i] exists and both players are in it
-                char game_info[BUFFER_SIZE];
-                snprintf(game_info, sizeof(game_info), "Game %d: %s (full)\n", games[i].id, games[i].player1->username);
+
+                if (player2 == NULL) { // Waiting for second player
+                    snprintf(game_info, sizeof(game_info),
+                             "Game %d: %s (waiting) | Score: %d | Wins: %d | Losses: %d | Abandons: %d\n",
+                             games[i].id, player1->username, player1->score,
+                             player1->victories, player1->defeats,
+                             player1->games_played - (player1->victories + player1->defeats));
+                } else { // Game is full
+                    snprintf(game_info, sizeof(game_info),
+                             "Game %d: %s vs %s (full)\n",
+                             games[i].id, player1->username, player2->username);
+                }
+
                 strcat(list, game_info);
                 available_games++;
             }
         }
 
-        sendpacket(client, 0, list); // Send list games packet to client
+        if (available_games == 0) {
+            sendpacket(client, 1, "No game available");
+        } else {
+            sendpacket(client, 0, list);
+        }
     }
 }
 
