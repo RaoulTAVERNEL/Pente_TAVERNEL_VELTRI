@@ -27,6 +27,16 @@ class ClientSocket:
         """Receives a packet of data from the server."""
         return self.socket.recv(self.buffer_size)
 
+    def receive_packet_nonblocking(self):
+        """Receives a packet of data from the server in non-blocking mode."""
+        try:
+            self.socket.settimeout(0.1)  # Set a small timeout for non-blocking behavior
+            return self.socket.recv(self.buffer_size)
+        except socket.timeout:
+            return None
+        finally:
+            self.socket.settimeout(None)  # Reset to blocking mode
+
     def close(self):
         """Closes the network connection."""
         self.socket.close()

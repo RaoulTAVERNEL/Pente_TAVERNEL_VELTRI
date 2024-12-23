@@ -12,8 +12,13 @@ def main():
     state_manager = StateManager(client_socket)
     gui_manager = GUIManager(state_manager)
 
-    client_socket.connect()
-    gui_manager.run()
+    try:
+        client_socket.connect()
+        gui_manager.run()
+    except Exception as e:
+        print(f"Error in main: {e}")
+    finally:
+        client_socket.close()
 
 if __name__ == "__main__":
     main()

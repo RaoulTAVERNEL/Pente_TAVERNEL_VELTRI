@@ -278,7 +278,7 @@ void closeconnection(client_t *client, fd_set *read_fds, int *active_client_coun
 /* FUNCTION TO SEND A PACKET TO A CLIENT */
 
 void sendpacket(const client_t *client, unsigned char status, const char *message) {
-    char packed_response[BUFFER_SIZE]; // Set response packet with buffer size (1024)
+    char packed_response[BUFFER_SIZE];
     int length = snprintf(packed_response, sizeof(packed_response), "%s\n", message);
 
     if (length < 0) {
@@ -288,16 +288,17 @@ void sendpacket(const client_t *client, unsigned char status, const char *messag
 
     unsigned char message_length = strlen(message);
     unsigned char response[BUFFER_SIZE];
-    response[0] = status; // First byte reserved for status
-    response[1] = message_length; // Second byte for packet length
+    response[0] = status;
+    response[1] = message_length;
 
-    memcpy(response + 2, message, message_length); // Offset to +2 to copy the message
-    ssize_t bytes_sent = write(client->fd, response, message_length + 2); // Send packet to client
+    memcpy(response + 2, message, message_length);
+    ssize_t bytes_sent = write(client->fd, response, message_length + 2);
 
     if (bytes_sent == -1) {
         perror("ERROR sending packet");
     } else {
-        printf("Sent packet: Status: %d, Length: %d, Message: %s\n", status, message_length, message);
+        printf("[DEBUG] Sent packet to client %s (fd: %d): Status: %d, Length: %d, Message: %s\n",
+               client->username, client->fd, status, message_length, message);
     }
 }
 
@@ -435,21 +436,21 @@ void join_game(client_t *client, int game_id) {
     if (game_id > 0 && game_id <= game_counter && games[game_id - 1].status == 1) {
         client_t *player1 = games[game_id - 1].player1;
 
-        if (games[game_id - 1].player1 == NULL) { // Check if game has a valid player 1 (creator)
+        if (!player1) {
             sendpacket(client, 1, "Game join failed: Player 1 is not valid");
             return;
         }
 
-        if (games[game_id - 1].player2 != NULL) { // Check if game already has 2 players
+        if (games[game_id - 1].player2 != NULL) {
             sendpacket(client, 1, "Game join failed: Game is already full");
             return;
         }
 
-        games[game_id - 1].player2 = client; // Assign client as Player 2
-        games[game_id - 1].status = 2; // Game is now active
+        games[game_id - 1].player2 = client;
+        games[game_id - 1].status = 2;
 
-        client->current_game = &games[game_id - 1]; // Update client's current game
-        player1->current_game = &games[game_id - 1]; // Ensure Player 1 also has the game set
+        client->current_game = &games[game_id - 1];
+        player1->current_game = &games[game_id - 1];
 
         assign_turns(game_id, client, player1);
     }

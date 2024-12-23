@@ -83,30 +83,26 @@ class GUIManager:
                     # Handle clicks on dynamically created game buttons
                     for game_text, button in game_buttons.items():
                         if event.ui_element == button:
-                            print(f"Button clicked for game: {game_text}")  # Debug message
-                            self.state_manager.join_game(game_text)  # Pass the raw game text
+                            self.state_manager.join_game(game_text)
                             running = False
-                            if self.state_manager.current_state in [PLAYING_STATE, WAITING_STATE]:
-                                self.show_game_screen()
+                            if self.state_manager.current_state == PLAYING_STATE:
+                                self.show_playing_state()
+                            elif self.state_manager.current_state == WAITING_STATE:
+                                self.show_waiting_state()
 
             self.manager.update(time_delta)
             self.screen.blit(self.background, (0, 0))
             self.manager.draw_ui(self.screen)
             pygame.display.update()
 
-    def show_game_screen(self):
+    def show_waiting_state(self):
         """
-        Displays the game screen where moves are made or waiting happens.
+        Displays the waiting screen indicating the player is waiting for the opponent's move.
         """
         self.manager.clear_and_reset()
-        label = pygame_gui.elements.UILabel(
+        pygame_gui.elements.UILabel(
             relative_rect=pygame.Rect((150, 250), (500, 50)),
-            text="Game in progress...",
-            manager=self.manager
-        )
-        go_back_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((300, 400), (200, 50)),
-            text="Go back to Lobby",
+            text="Waiting for opponent's move...",
             manager=self.manager
         )
 
@@ -122,11 +118,90 @@ class GUIManager:
 
                 self.manager.process_events(event)
 
-                if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                    if event.ui_element == go_back_button:
-                        self.state_manager.request_game_list()
+            self.state_manager.handle_waiting_state()
+
+            if self.state_manager.current_state == PLAYING_STATE:
+                self.show_playing_state()
+                running = False
+            elif self.state_manager.current_state == LOBBY_STATE:
+                self.show_lobby()
+                running = False
+
+            self.manager.update(time_delta)
+            self.screen.blit(self.background, (0, 0))
+            self.manager.draw_ui(self.screen)
+            pygame.display.update()
+
+    def show_playing_state(self):
+        """
+        Displays the playing screen where the player can make a move or end the game.
+        """
+        self.manager.clear_and_reset()
+        pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect((150, 250), (500, 50)),
+            text="Your turn to play!",
+            manager=self.manager
+        )
+        finish_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((300, 400), (200, 50)),
+            text="End Game",
+            manager=self.manager
+        )
+
+        running = True
+        clock = pygame.time.Clock()
+
+        while running:
+            time_delta = clock.tick(60) / 1000.0
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                self.manager.process_events(event)
+
+                if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == finish_button:
+                    self.state_manager.handle_playing_state()
+                    if self.state_manager.current_state == LOBBY_STATE:
                         self.show_lobby()
-                        running = False
+                    running = False
+
+            self.manager.update(time_delta)
+            self.screen.blit(self.background, (0, 0))
+            self.manager.draw_ui(self.screen)
+            pygame.display.update()
+
+    def show_game_result(self, result):
+        """
+        Displays the game result (win/lose) based on the server's response.
+        """
+        self.manager.clear_and_reset()
+        pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect((150, 250), (500, 50)),
+            text=result,
+            manager=self.manager
+        )
+        back_to_lobby_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((300, 400), (200, 50)),
+            text="Back to Lobby",
+            manager=self.manager
+        )
+
+        running = True
+        clock = pygame.time.Clock()
+
+        while running:
+            time_delta = clock.tick(60) / 1000.0
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                self.manager.process_events(event)
+
+                if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == back_to_lobby_button:
+                    self.show_lobby()
+                    running = False
 
             self.manager.update(time_delta)
             self.screen.blit(self.background, (0, 0))
@@ -187,13 +262,13 @@ class GUIManager:
 
     def show_inactive_game(self):
         """
-        Displays a screen indicating that a new game has been created,
-        waiting for another player to join.
+        Affiche un écran indiquant que la partie est créée et en attente d'un autre joueur.
+        Passe automatiquement en état PLAYING_STATE ou WAITING_STATE selon la réponse du serveur.
         """
         self.manager.clear_and_reset()
         pygame_gui.elements.UILabel(
             relative_rect=pygame.Rect((150, 250), (500, 50)),
-            text="New game created. Waiting for opponent...",
+            text="Partie créée. En attente d'un adversaire...",
             manager=self.manager
         )
 
@@ -208,6 +283,16 @@ class GUIManager:
                     running = False
 
                 self.manager.process_events(event)
+
+            # Vérifier les mises à jour du serveur de manière non-bloquante
+            self.state_manager.process_server_response_nonblocking()
+
+            if self.state_manager.current_state == PLAYING_STATE:
+                self.show_playing_state()
+                running = False
+            elif self.state_manager.current_state == WAITING_STATE:
+                self.show_waiting_state()
+                running = False
 
             self.manager.update(time_delta)
             self.screen.blit(self.background, (0, 0))
