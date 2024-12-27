@@ -181,7 +181,7 @@ def handle_playing_state(gui_manager, user):
     clock = pygame.time.Clock()
     running = True
     cell_size = 25
-    board_state = user.board_state  # Récupère l'état actuel du plateau
+    board_state = user.board_state # Récupère l'état actuel du plateau
 
     abandon_btn, status_lbl, grid_offset_x, grid_offset_y = gui_manager.show_board(
         board_state, cell_size, status_message="It's your turn!"
@@ -192,12 +192,23 @@ def handle_playing_state(gui_manager, user):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                print("[DEBUG] User closed the game window.")
-                return False  # Ferme complètement le client
+                return False
 
             gui_manager.manager.process_events(event)
 
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Clic gauche
+            if event.type == pygame_gui.UI_BUTTON_PRESSED:
+                if event.ui_element == abandon_btn:
+                    # Envoyer un paquet d'abandon au serveur
+                    abandon_pack = bytes([PKT_ABANDON])
+                    user.client_socket.send_packet(abandon_pack)
+
+                    status, message = user.client_socket.receive_packet()
+                    if status == STATUS_ABANDON_GAME:
+                        print(f"[DEBUG] Abandon confirmed: {message}")
+                        gui_manager.show_end_screen(is_winner=False, message="You abandoned the game.")
+                        return True
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_x, mouse_y = event.pos
                 grid_x = (mouse_x - grid_offset_x) // cell_size
                 grid_y = (mouse_y - grid_offset_y) // cell_size
@@ -207,46 +218,41 @@ def handle_playing_state(gui_manager, user):
                     print(f"[DEBUG] Sent move: x={grid_x}, y={grid_y}")
                     user.client_socket.send_packet(move_pack)
 
-        # Vérifier les messages du serveur
+
         status, message = user.client_socket.receive_packet(nonblocking=True)
 
         if status == STATUS_BOARD_UPDATE:
             board_state = update_board_state(message)
-            user.board_state = board_state  # Mise à jour de l'état du plateau
+            user.board_state = board_state
             gui_manager.show_board(board_state, cell_size, status_message="Your turn!")
         elif status == STATUS_WAIT_MOVE:
             user.current_state = WAITING_STATE
-            return True  # Retourne à l'état WAITING_STATE
+            return True
         elif status == STATUS_INVALID_MOVE:
             gui_manager.show_board(board_state, cell_size, status_message="Invalid move. Try again!")
         elif status in [STATUS_VICTORY, STATUS_LOST]:
             is_winner = (status == STATUS_VICTORY)
             return_btn = gui_manager.show_end_screen(is_winner=is_winner, message=message)
 
-            # Attendre que l'utilisateur clique sur "Back to Lobby"
             waiting = True
             while waiting:
                 time_delta = clock.tick(60) / 1000.0
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        print("[DEBUG] User closed the game window.")
-                        return False  # Ferme complètement le client
+                        return False
                     gui_manager.manager.process_events(event)
                     if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == return_btn:
                         waiting = False
 
-                gui_manager.manager.update(time_delta)
-                gui_manager.screen.blit(gui_manager.background, (0, 0))
-                gui_manager.manager.draw_ui(gui_manager.screen)
-                pygame.display.update()
-
-            user.current_state = LOBBY_STATE  # Retour au lobby
+            gui_manager.manager.clear_and_reset()
+            user.current_state = LOBBY_STATE
             return True
 
         gui_manager.manager.update(time_delta)
         gui_manager.screen.blit(gui_manager.background, (0, 0))
         gui_manager.manager.draw_ui(gui_manager.screen)
         pygame.display.update()
+
 
 
 
@@ -281,8 +287,12 @@ def handle_waiting_state(gui_manager, user):
         elif status == STATUS_MAKE_MOVE:
             user.current_state = PLAYING_STATE
             return True
-        elif status in [STATUS_VICTORY, STATUS_LOST]:
+        elif status in [STATUS_VICTORY, STATUS_LOST, STATUS_ABANDON_GAME]:
             is_winner = (status == STATUS_VICTORY)
+            if status == STATUS_ABANDON_GAME:
+                message = "Your opponent abandoned the game. You win!"
+                is_winner = True
+
             return_btn = gui_manager.show_end_screen(is_winner=is_winner, message=message)
 
             # Attendre que l'utilisateur clique sur "Back to Lobby"

@@ -92,6 +92,7 @@ void join_game(client_t *client, int game_id) {
         client->current_game = &games[game_id - 1];
         client->games_played++;
         player1->games_played++;
+        printf("Nombre de partie jouée: %d", client->games_played);
 
         update_board(&games[game_id - 1]);
         assign_turns(game_id, client, player1);

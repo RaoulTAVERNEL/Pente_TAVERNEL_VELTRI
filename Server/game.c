@@ -36,12 +36,12 @@ void analyze_move(client_t *client, int x, int y) {
 
         snprintf(victory_message, sizeof(victory_message),
                  "You won! Victories: %d, Defeats: %d, Score: %d, Games played: %d",
-                 client->victories + 1, client->defeats, client->score + 3, client->games_played + 1);
+                 client->victories + 1, client->defeats, client->score + 3, client->games_played);
 
         client_t *opponent = (client == game->player1) ? game->player2 : game->player1;
         snprintf(defeat_message, sizeof(defeat_message),
                  "You lost! Victories: %d, Defeats: %d, Score: %d, Games played: %d",
-                 opponent->victories, opponent->defeats + 1, opponent->score, opponent->games_played + 1);
+                 opponent->victories, opponent->defeats + 1, opponent->score, opponent->games_played);
 
         sendpacket(client, STATUS_VICTORY, victory_message);
         sendpacket(opponent, STATUS_LOST, defeat_message);

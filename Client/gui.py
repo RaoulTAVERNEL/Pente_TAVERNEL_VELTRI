@@ -161,14 +161,6 @@ class GUIManager:
         return pending_lbl, lobby_btn, error_lbl
 
     def show_board(self, board_state, cell_size=25, status_message="Waiting..."):
-        """
-        Affiche le plateau de jeu de Pente avec des cases plus petites et un fond noir.
-        :param board_state: Liste 2D représentant l'état du plateau (0 = vide, 1 = joueur 1, 2 = joueur 2).
-        :param cell_size: Taille d'une case en pixels.
-        :param status_message: Message à afficher au-dessus du plateau.
-        """
-        print(f"[DEBUG] Board state for rendering:\n{board_state}")
-        print(f"[DEBUG] Status message: {status_message}")
         pygame.display.set_caption("Pente - Playing")
         self.manager.clear_and_reset()
 
@@ -213,8 +205,16 @@ class GUIManager:
             object_id="#status_label"
         )
 
+        # Ajouter le bouton "Abandonner"
+        abandon_btn = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((462, 700), (100, 50)),
+            text="Abandon",
+            manager=self.manager,
+            object_id="#abandon_button"
+        )
+
         pygame.display.flip()
-        return None, status_lbl, grid_offset_x, grid_offset_y
+        return abandon_btn, status_lbl, grid_offset_x, grid_offset_y
 
     def show_end_screen(self, is_winner, message=""):
         pygame.display.set_caption("Game Over")
