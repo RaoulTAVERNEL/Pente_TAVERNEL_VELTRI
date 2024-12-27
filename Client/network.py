@@ -1,42 +1,56 @@
 import socket
+import struct
+from config import *
 
 class ClientSocket:
-    def __init__(self, host, port, buffer_size):
-        """
-        Initializes the network socket with server host, port, and buffer size.
-        """
-        self.host = host
-        self.port = port
-        self.buffer_size = buffer_size
+    def __init__(self):
+        self.host = SERVER_HOST
+        self.port = SERVER_PORT
+        self.buffer_size = BUFFER_SIZE
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def connect(self):
-        """Establishes a connection to the server."""
         try:
             self.socket.connect((self.host, self.port))
-            print(f"Connected to server at {self.host}:{self.port}")
-        except ConnectionRefusedError:
-            print("Connection failed. Make sure the server is running.")
-            raise
+            print(f"[DEBUG] Connected to server at {self.host}:{self.port}")
+        except ConnectionRefusedError as e:
+            print("[ERROR]: Connection failed. Make sure the server is running.")
+            raise e
 
     def send_packet(self, packet):
-        """Sends a packet of data to the server."""
-        self.socket.sendall(packet)
-
-    def receive_packet(self):
-        """Receives a packet of data from the server."""
-        return self.socket.recv(self.buffer_size)
-
-    def receive_packet_nonblocking(self):
-        """Receives a packet of data from the server in non-blocking mode."""
         try:
-            self.socket.settimeout(0.1)  # Set a small timeout for non-blocking behavior
-            return self.socket.recv(self.buffer_size)
+            self.socket.sendall(packet)
+            print(f"[DEBUG] Sent packet: {packet}")
+        except Exception as e:
+            print("[ERROR]: Failed to send packet.")
+            raise e
+
+    def receive_packet(self, nonblocking=False):
+        try:
+            if nonblocking:
+                self.socket.settimeout(0.1)
+            else:
+                self.socket.settimeout(None)
+
+            data = self.socket.recv(self.buffer_size)
+            print(f"[DEBUG] Received raw packet: {data}")
+
+            if len(data) < 2:
+                raise ValueError("[ERROR]: Invalid response length")
+
+            status = struct.unpack("!B", data[0:1])[0]
+            message_length = struct.unpack("!B", data[1:2])[0]
+            message = data[2:2 + message_length].decode()
+
+            print(f"[DEBUG] Unpacked response: Status = {status}, Message = {message}")
+            return status, message
         except socket.timeout:
-            return None
+            if nonblocking:
+                return None, None
+            raise
         finally:
-            self.socket.settimeout(None)  # Reset to blocking mode
+            self.socket.settimeout(None)
 
     def close(self):
-        """Closes the network connection."""
         self.socket.close()
+        print("[DEBUG] Connection closed.")
