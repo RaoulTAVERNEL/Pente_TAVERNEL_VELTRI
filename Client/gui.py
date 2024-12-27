@@ -240,18 +240,20 @@ class GUIManager:
             object_id="#result_label"
         )
 
-        # Message supplémentaire (score ou autre)
+        # Gestion des textes longs pour le message supplémentaire
         if message:
-            pygame_gui.elements.UILabel(
-                relative_rect=pygame.Rect((312, 320), (400, 30)),
-                text=message,
-                manager=self.manager,
-                object_id="#message_label"
-            )
+            message_lines = self.wrap_text(message, 800)  # Largeur maximale de 800 pixels
+            for i, line in enumerate(message_lines):
+                pygame_gui.elements.UILabel(
+                    relative_rect=pygame.Rect((112, 320 + i * 40), (800, 30)),
+                    text=line,
+                    manager=self.manager,
+                    object_id="#message_label"
+                )
 
         # Bouton pour retourner au lobby
         return_btn = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((462, 400), (100, 50)),
+            relative_rect=pygame.Rect((462, 500 + len(message_lines) * 40), (100, 50)),
             text="Back to Lobby",
             manager=self.manager,
             object_id="#return_button"
@@ -260,8 +262,30 @@ class GUIManager:
         pygame.display.flip()
         return return_btn
 
+    def wrap_text(self, text, max_width):
+        """
+        Découpe le texte en lignes pour qu'il respecte une largeur maximale.
+        :param text: Texte à découper.
+        :param max_width: Largeur maximale en pixels.
+        :return: Liste de lignes découpées.
+        """
+        font = pygame.font.Font(None, 24)  # Police par défaut avec une taille de 24
+        words = text.split(' ')
+        lines = []
+        current_line = []
 
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            if font.size(test_line)[0] <= max_width:
+                current_line.append(word)
+            else:
+                lines.append(' '.join(current_line))
+                current_line = [word]
 
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        return lines
 
 
 

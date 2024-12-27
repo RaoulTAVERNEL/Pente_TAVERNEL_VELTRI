@@ -5,6 +5,7 @@ class User:
     def __init__(self, client_socket):
         self.client_socket = client_socket
         self.current_state = INITIAL_STATE
+        self.board_state = [[0] * 19 for _ in range(19)]
 
     @staticmethod
     def _pack_credentials(username, password):

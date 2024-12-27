@@ -1,5 +1,5 @@
-from game import *
-from gui import *
+
+
 
 def handle_authentication_events(gui_manager, user):
     running = True
@@ -175,6 +175,9 @@ def handle_inactive_game_events(gui_manager, user):
 
     return True
 
+from game import *
+from gui import *
+
 def handle_playing_state(gui_manager, user):
     clock = pygame.time.Clock()
     running = True
@@ -218,11 +221,11 @@ def handle_playing_state(gui_manager, user):
         elif status == STATUS_INVALID_MOVE:
             gui_manager.show_board(board_state, cell_size, status_message="Invalid move. Try again!")
         elif status == STATUS_VICTORY:
-            gui_manager.show_end_screen(is_winner=True, message="Congratulations, you won!")
+            gui_manager.show_end_screen(is_winner=True, message=message)
             user.current_state = LOBBY_STATE
             return False
         elif status == STATUS_LOST:
-            gui_manager.show_end_screen(is_winner=False, message="You lost. Better luck next time!")
+            gui_manager.show_end_screen(is_winner=False, message=message)
             user.current_state = LOBBY_STATE
             return False
 
@@ -230,6 +233,7 @@ def handle_playing_state(gui_manager, user):
         gui_manager.screen.blit(gui_manager.background, (0, 0))
         gui_manager.manager.draw_ui(gui_manager.screen)
         pygame.display.update()
+
 
 
 def handle_waiting_state(gui_manager, user):
@@ -264,11 +268,11 @@ def handle_waiting_state(gui_manager, user):
             user.current_state = PLAYING_STATE
             return True
         elif status == STATUS_VICTORY:
-            gui_manager.show_end_screen(is_winner=True, message="Congratulations, you won!")
+            gui_manager.show_end_screen(is_winner=True, message=message)
             user.current_state = LOBBY_STATE
             return False
         elif status == STATUS_LOST:
-            gui_manager.show_end_screen(is_winner=False, message="You lost. Better luck next time!")
+            gui_manager.show_end_screen(is_winner=False, message=message)
             user.current_state = LOBBY_STATE
             return False
 
@@ -297,4 +301,5 @@ def update_board_state(message):
         print(f"[ERROR] Parsing error: {ve}")
         print(f"[DEBUG] Received message: {message}")
         return [[0] * 19 for _ in range(19)]  # Retourner un plateau vide en cas d'erreur
+
 

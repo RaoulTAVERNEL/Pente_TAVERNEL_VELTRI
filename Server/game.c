@@ -30,21 +30,26 @@ void analyze_move(client_t *client, int x, int y) {
     printf("[DEBUG] Player %d placed a piece at (%d, %d).\n", player, x, y);
 
     if (check_winner(game->board, x, y, player)) {
-        char message[BUFFER_SIZE];
+        printf("[DEBUG] Player %d won the game.\n", player);
+        char victory_message[BUFFER_SIZE];
+        char defeat_message[BUFFER_SIZE];
+
+        snprintf(victory_message, sizeof(victory_message),
+                 "You won! Victories: %d, Defeats: %d, Score: %d, Games played: %d",
+                 client->victories + 1, client->defeats, client->score + 3, client->games_played + 1);
+
+        client_t *opponent = (client == game->player1) ? game->player2 : game->player1;
+        snprintf(defeat_message, sizeof(defeat_message),
+                 "You lost! Victories: %d, Defeats: %d, Score: %d, Games played: %d",
+                 opponent->victories, opponent->defeats + 1, opponent->score, opponent->games_played + 1);
+
+        sendpacket(client, STATUS_VICTORY, victory_message);
+        sendpacket(opponent, STATUS_LOST, defeat_message);
 
         game->player1->state = LOBBY_STATE;
         game->player2->state = LOBBY_STATE;
         delete_game(game->id);
-        update_player_stats(game->player1, game->player2);
-
-        snprintf(message, sizeof(message), "You won. Victories: %d, Defeats: %d, Score: %d, Games played: %d",
-                 client->victories, client->defeats, client->score, client->games_played);
-        sendpacket(client, STATUS_VICTORY, message);
-
-        client_t *loser = (player == 1) ? game->player2 : game->player1;
-        snprintf(message, sizeof(message), "You lost. Victories: %d, Defeats: %d, Score: %d, Games played: %d",
-                 loser->victories, loser->defeats, loser->score, loser->games_played);
-        sendpacket(loser, STATUS_LOST, message);
+        update_player_stats(client, opponent);
     } else {
         game->turn = (player == 1) ? 2 : 1; // Passe le tour à l'autre joueur
         client->state = WAITING_STATE;
@@ -55,6 +60,7 @@ void analyze_move(client_t *client, int x, int y) {
         sendpacket(opponent, STATUS_MAKE_MOVE, "Your turn to play.");
     }
 }
+
 
 
 int check_winner(int board[BOARD_SIZE][BOARD_SIZE], int x, int y, int player) {
