@@ -167,6 +167,8 @@ class GUIManager:
         :param cell_size: Taille d'une case en pixels.
         :param status_message: Message à afficher au-dessus du plateau.
         """
+        print(f"[DEBUG] Board state for rendering:\n{board_state}")
+        print(f"[DEBUG] Status message: {status_message}")
         pygame.display.set_caption("Pente - Playing")
         self.manager.clear_and_reset()
 
@@ -211,15 +213,56 @@ class GUIManager:
             object_id="#status_label"
         )
 
-        # Bouton pour abandonner
-        abandon_btn = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((850, 700), (120, 50)),  # Bouton en bas à droite
-            text="Abandon",
-            manager=self.manager
+        pygame.display.flip()
+        return None, status_lbl, grid_offset_x, grid_offset_y
+
+    def show_end_screen(self, is_winner, message=""):
+        """
+        Affiche l'écran de fin de partie pour le gagnant ou le perdant.
+        :param is_winner: Booléen, True si le joueur a gagné, False s'il a perdu.
+        :param message: Message additionnel à afficher.
+        """
+        pygame.display.set_caption("Game Over")
+        self.manager.clear_and_reset()
+
+        # Fond noir
+        self.background.fill(pygame.Color('#000000'))
+
+        # Texte principal (victoire ou défaite)
+        result_text = "You Win!" if is_winner else "You Lose!"
+        result_color = pygame.Color('#00FF00') if is_winner else pygame.Color(
+            '#FF0000')  # Vert pour victoire, rouge pour défaite
+
+        pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect((312, 250), (400, 50)),
+            text=result_text,
+            manager=self.manager,
+            object_id="#result_label"
+        )
+
+        # Message supplémentaire (score ou autre)
+        if message:
+            pygame_gui.elements.UILabel(
+                relative_rect=pygame.Rect((312, 320), (400, 30)),
+                text=message,
+                manager=self.manager,
+                object_id="#message_label"
+            )
+
+        # Bouton pour retourner au lobby
+        return_btn = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((462, 400), (100, 50)),
+            text="Back to Lobby",
+            manager=self.manager,
+            object_id="#return_button"
         )
 
         pygame.display.flip()
-        return abandon_btn, status_lbl, grid_offset_x, grid_offset_y
+        return return_btn
+
+
+
+
 
 
 

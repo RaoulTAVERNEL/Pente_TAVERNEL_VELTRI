@@ -28,7 +28,6 @@ void analyze_move(client_t *client, int x, int y) {
     game->board[x][y] = player; // Met à jour le plateau
     update_board(game); // Envoie la mise à jour à tous les joueurs
     printf("[DEBUG] Player %d placed a piece at (%d, %d).\n", player, x, y);
-    sleep(1);
 
     if (check_winner(game->board, x, y, player)) {
         char message[BUFFER_SIZE];

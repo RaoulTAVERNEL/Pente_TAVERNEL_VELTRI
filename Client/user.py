@@ -23,9 +23,14 @@ class User:
     def authenticate(self, username, password):
         try:
             print(f"[DEBUG] Attempting authentication with username: {username}, password: {password}")
+
+            # Préparer et envoyer les données d'authentification
             auth_pack = self._pack_credentials(username, password)
             self.client_socket.send_packet(auth_pack)
+            # Recevoir la réponse
             status, message = self.client_socket.receive_packet(False)
+
+            # Gestion des états en fonction du statut reçu
             if status == STATUS_AUTH_SUCCESS:
                 self.current_state = LOBBY_STATE
                 print(f"[DEBUG] Authentication successful: {message}")
@@ -34,6 +39,7 @@ class User:
                 print(f"[DEBUG] Authentication failed: {message}")
 
             return status
+
         except Exception as e:
             print(f"[ERROR]: Authentication error: {e}")
             raise

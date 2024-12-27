@@ -32,21 +32,37 @@ class ClientSocket:
             else:
                 self.socket.settimeout(None)
 
-            data = self.socket.recv(self.buffer_size)
-            print(f"[DEBUG] Received raw packet: {data}")
+            # Lire les 5 premiers octets (statut + longueur totale sur 4 octets)
+            header = self.socket.recv(5)
+            if len(header) < 5:
+                raise ValueError("[ERROR]: Header incomplete")
 
-            if len(data) < 2:
-                raise ValueError("[ERROR]: Invalid response length")
+            # Décoder le statut et la longueur
+            status = header[0]
+            message_length = struct.unpack("!I", header[1:])[0]  # 4 octets pour la longueur
 
-            status = struct.unpack("!B", data[0:1])[0]
-            message_length = struct.unpack("!B", data[1:2])[0]
-            message = data[2:2 + message_length].decode()
+            # Lire le message complet
+            message_data = b""
+            while len(message_data) < message_length:
+                chunk = self.socket.recv(min(self.buffer_size, message_length - len(message_data)))
+                if not chunk:
+                    raise ValueError("[ERROR]: Connection closed during message reception")
+                message_data += chunk
 
+            # Log pour tout le paquet brut reçu
+            print(f"[DEBUG] Received raw packet: {header + message_data}")
+
+            # Décoder le message
+            message = message_data.decode()
             print(f"[DEBUG] Unpacked response: Status = {status}, Message = {message}")
             return status, message
+
         except socket.timeout:
             if nonblocking:
                 return None, None
+            raise
+        except Exception as e:
+            print(f"[ERROR] Exception in receive_packet: {e}")
             raise
         finally:
             self.socket.settimeout(None)

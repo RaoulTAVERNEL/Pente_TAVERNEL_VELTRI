@@ -3,7 +3,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <netinet/in.h>
 
 void handle_signal(int signal) {
     if (signal == SIGINT) {
@@ -36,26 +38,29 @@ void closeconnection(client_t *client, fd_set *read_fds, int *active_client_coun
 }
 
 void sendpacket(const client_t *client, unsigned char status, const char *message) {
-    char packed_response[BUFFER_SIZE];
-    int length = snprintf(packed_response, sizeof(packed_response), "%s", message);
+    size_t message_length = strlen(message);
 
-    if (length < 0) {
-        perror("[ERROR] on formatting packet");
+    if (message_length > BUFFER_SIZE - 6) { // Garde une marge pour l'en-tête
+        fprintf(stderr, "[ERROR] Message too large to send (max %d bytes)\n", BUFFER_SIZE - 6);
         return;
     }
 
-    unsigned char message_length = strlen(message);
     unsigned char response[BUFFER_SIZE];
 
+    // Construire l'en-tête
     response[0] = status;
-    response[1] = message_length;
-    memcpy(response + 2, message, message_length);
-    ssize_t bytes_sent = write(client->fd, response, message_length + 2);
+    uint32_t length_network = htonl((uint32_t)message_length); // Convertir la longueur en réseau
+    memcpy(response + 1, &length_network, sizeof(uint32_t));   // Copie 4 octets pour la longueur
 
+    // Copier le message
+    memcpy(response + 5, message, message_length);
+
+    // Envoyer le paquet
+    ssize_t bytes_sent = write(client->fd, response, 5 + message_length);
     if (bytes_sent == -1) {
         perror("[ERROR] on sending packet");
     } else {
-        printf("[DEBUG] Sent packet to client %s (fd: %d): Status: %d, Length: %d, Message: %s\n",
+        printf("[DEBUG] Sent packet to client %s (fd: %d): Status: %d, Length: %zu, Message: %s\n",
                client->username, client->fd, status, message_length, message);
     }
 }

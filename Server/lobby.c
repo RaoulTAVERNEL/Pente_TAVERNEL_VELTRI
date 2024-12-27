@@ -37,19 +37,31 @@ void list_games(const client_t *client) {
 
 void create_game(client_t *client) {
     if (game_counter < MAX_GAMES) {
+        // Initialisation des informations de la partie
         games[game_counter].id = game_counter + 1;
         games[game_counter].player1 = client;
         games[game_counter].player2 = NULL;
         games[game_counter].status = 1;
+
+        // Log pour vérifier la taille du board
+        size_t board_size = sizeof(games[game_counter].board) / sizeof(games[game_counter].board[0][0]);
+        printf("[DEBUG] Board size: %zu cells\n", board_size);
+
+        // Initialisation du board à 0 avec des logs pour vérifier les valeurs
         memset(games[game_counter].board, 0, sizeof(games[game_counter].board));
+        printf("[DEBUG] Board initialized with zeros\n");
+
+        // Mise à jour de l'état du client
         client->state = INACTIVE_GAME_STATE;
         client->current_game = &games[game_counter];
         game_counter++;
+
         sendpacket(client, STATUS_NEW_GAME_SUCCESS, "New game created. Waiting for another player to start the game...");
     } else {
         sendpacket(client, STATUS_NEW_GAME_FAILED, "Game creation failed: Lobby full");
     }
 }
+
 
 void handle_check_game(const client_t *client) {
     game_t *game = client->current_game;
@@ -82,7 +94,6 @@ void join_game(client_t *client, int game_id) {
         player1->games_played++;
 
         update_board(&games[game_id - 1]);
-        sleep(1);
         assign_turns(game_id, client, player1);
 
         printf("[DEBUG] Game %d: Player 1 (%s) vs Player 2 (%s).\n", game_id, player1->username, client->username);
@@ -120,21 +131,32 @@ void update_board(const game_t *game) {
 
     for (int i = 0; i < BOARD_SIZE; i++) {
         for (int j = 0; j < BOARD_SIZE; j++) {
-            char temp[4];
-            snprintf(temp, sizeof(temp), "%d ", game->board[i][j]);
+            char temp[4]; // Assez pour "0," ou "10,"
+            snprintf(temp, sizeof(temp), "%d,", game->board[i][j]);
             if (strlen(board) + strlen(temp) >= BUFFER_SIZE - 1) {
-                printf("[ERROR] Board update message too large.\n");
+                printf("[ERROR] Board update message too large. Current length: %ld\n", strlen(board));
                 return;
             }
             strcat(board, temp);
         }
     }
 
-    if (strlen(board) < BOARD_SIZE * BOARD_SIZE * 2) {
-        printf("[ERROR] Incomplete board update message.\n");
+    // Supprimer la dernière virgule pour respecter le format attendu
+    if (strlen(board) > 0) {
+        board[strlen(board) - 1] = '\0';
+    }
+
+    // Vérification de la longueur totale attendue
+    int expected_length = (BOARD_SIZE * BOARD_SIZE * 2) - 1; // 1 chiffre + 1 virgule par case, moins la virgule finale
+    if (strlen(board) != expected_length) {
+        printf("[ERROR] Board data is incomplete. Length: %ld, Expected: %d\n", strlen(board), expected_length);
+        printf("[DEBUG] Partial board data:\n%s\n", board);
         return;
     }
 
     sendpacket(game->player1, STATUS_BOARD_UPDATE, board);
     sendpacket(game->player2, STATUS_BOARD_UPDATE, board);
 }
+
+
+

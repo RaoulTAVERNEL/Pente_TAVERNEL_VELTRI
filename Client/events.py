@@ -175,12 +175,12 @@ def handle_inactive_game_events(gui_manager, user):
 
     return True
 
-
 def handle_playing_state(gui_manager, user):
     clock = pygame.time.Clock()
     running = True
-    cell_size = 25  # Taille réduite des cases
-    board_state = [[0] * 19 for _ in range(19)]  # Plateau vide 19x19
+    cell_size = 25
+    board_state = user.board_state  # Récupère l'état actuel du plateau
+
     abandon_btn, status_lbl, grid_offset_x, grid_offset_y = gui_manager.show_board(
         board_state, cell_size, status_message="It's your turn!"
     )
@@ -194,40 +194,50 @@ def handle_playing_state(gui_manager, user):
 
             gui_manager.manager.process_events(event)
 
-            # Gérer l'abandon
-            if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == abandon_btn:
-                status = abandon_game(user)
-                if status == STATUS_ABANDON_GAME:
-                    return False  # Quitte l'état et retourne au lobby
-
-            # Gérer un clic sur le plateau
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Clic gauche
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Clic gauche
                 mouse_x, mouse_y = event.pos
                 grid_x = (mouse_x - grid_offset_x) // cell_size
                 grid_y = (mouse_y - grid_offset_y) // cell_size
 
-                # Vérifier que le clic est dans les limites et la case est vide
                 if 0 <= grid_x < 19 and 0 <= grid_y < 19 and board_state[grid_y][grid_x] == 0:
-                    # Envoyer le coup au serveur
-                    move_pack = bytes([PKT_MOVE]) + struct.pack("!BB", grid_x, grid_y)
+                    move_pack = bytes([PKT_MOVE]) + struct.pack("!BB", grid_y, grid_x)
+                    print(f"[DEBUG] Sent move: x={grid_x}, y={grid_y}")
                     user.client_socket.send_packet(move_pack)
 
-                    # Mettre à jour localement pour feedback visuel
-                    board_state[grid_y][grid_x] = 1  # Joueur local
-                    abandon_btn, status_lbl, grid_offset_x, grid_offset_y = gui_manager.show_board(
-                        board_state, cell_size, status_message="Waiting for opponent..."
-                    )
+        # Vérifier les messages du serveur
+        status, message = user.client_socket.receive_packet(nonblocking=True)
+
+        if status == STATUS_BOARD_UPDATE:
+            board_state = update_board_state(message)
+            user.board_state = board_state  # Mise à jour de l'état du plateau
+            gui_manager.show_board(board_state, cell_size, status_message="Your turn!")
+        elif status == STATUS_WAIT_MOVE:
+            user.current_state = WAITING_STATE
+            user.board_state = board_state  # Persiste l'état
+            return True
+        elif status == STATUS_INVALID_MOVE:
+            gui_manager.show_board(board_state, cell_size, status_message="Invalid move. Try again!")
+        elif status == STATUS_VICTORY:
+            gui_manager.show_end_screen(is_winner=True, message="Congratulations, you won!")
+            user.current_state = LOBBY_STATE
+            return False
+        elif status == STATUS_LOST:
+            gui_manager.show_end_screen(is_winner=False, message="You lost. Better luck next time!")
+            user.current_state = LOBBY_STATE
+            return False
 
         gui_manager.manager.update(time_delta)
         gui_manager.screen.blit(gui_manager.background, (0, 0))
         gui_manager.manager.draw_ui(gui_manager.screen)
         pygame.display.update()
 
+
 def handle_waiting_state(gui_manager, user):
     clock = pygame.time.Clock()
     running = True
-    cell_size = 25  # Taille réduite des cases
-    board_state = [[0] * 19 for _ in range(19)]  # Plateau vide 19x19
+    cell_size = 25
+    board_state = user.board_state  # Récupère l'état actuel du plateau
+
     abandon_btn, status_lbl, grid_offset_x, grid_offset_y = gui_manager.show_board(
         board_state, cell_size, status_message="Waiting for opponent..."
     )
@@ -241,23 +251,50 @@ def handle_waiting_state(gui_manager, user):
 
             gui_manager.manager.process_events(event)
 
-            # Gérer l'abandon
-            if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == abandon_btn:
-                status = abandon_game(user)
-                if status == STATUS_ABANDON_GAME:
-                    return False  # Quitte l'état et retourne au lobby
-
-        # Vérifier l'état de la partie
+        # Vérifier les messages du serveur
         status, message = user.client_socket.receive_packet(nonblocking=True)
-        if status == STATUS_MAKE_MOVE:
-            grid_x, grid_y = struct.unpack("!BB", message[:2])
-            board_state[grid_y][grid_x] = 2  # Coup de l'adversaire
-            abandon_btn, status_lbl, grid_offset_x, grid_offset_y = gui_manager.show_board(
-                board_state, cell_size, status_message="It's your turn!"
-            )
-            return True  # Retourne à l'état PLAYING_STATE
+
+        if status == STATUS_BOARD_UPDATE:
+            board_state = update_board_state(message)
+            user.board_state = board_state  # Mise à jour de l'état du plateau
+            gui_manager.show_board(board_state, cell_size, status_message="Your turn!")
+            user.current_state = PLAYING_STATE
+            return True
+        elif status == STATUS_MAKE_MOVE:
+            user.current_state = PLAYING_STATE
+            return True
+        elif status == STATUS_VICTORY:
+            gui_manager.show_end_screen(is_winner=True, message="Congratulations, you won!")
+            user.current_state = LOBBY_STATE
+            return False
+        elif status == STATUS_LOST:
+            gui_manager.show_end_screen(is_winner=False, message="You lost. Better luck next time!")
+            user.current_state = LOBBY_STATE
+            return False
 
         gui_manager.manager.update(time_delta)
         gui_manager.screen.blit(gui_manager.background, (0, 0))
         gui_manager.manager.draw_ui(gui_manager.screen)
         pygame.display.update()
+
+
+
+def update_board_state(message):
+    try:
+        print(f"[DEBUG] Raw board message received (length: {len(message)}): {message}")
+
+        # Conversion des valeurs séparées par des virgules en entiers
+        board_values = list(map(int, message.strip().split(',')))
+        if len(board_values) != 19 * 19:  # Vérifier qu'il y a bien 361 valeurs
+            raise ValueError(f"Board data does not contain 361 values (received {len(board_values)}).")
+
+        # Transformation de la liste linéaire en une grille 19x19
+        board_state = [board_values[i * 19:(i + 1) * 19] for i in range(19)]
+        print(f"[DEBUG] Parsed board state: {board_state}")
+        return board_state
+
+    except ValueError as ve:
+        print(f"[ERROR] Parsing error: {ve}")
+        print(f"[DEBUG] Received message: {message}")
+        return [[0] * 19 for _ in range(19)]  # Retourner un plateau vide en cas d'erreur
+
