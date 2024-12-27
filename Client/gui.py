@@ -217,11 +217,6 @@ class GUIManager:
         return None, status_lbl, grid_offset_x, grid_offset_y
 
     def show_end_screen(self, is_winner, message=""):
-        """
-        Affiche l'écran de fin de partie pour le gagnant ou le perdant.
-        :param is_winner: Booléen, True si le joueur a gagné, False s'il a perdu.
-        :param message: Message additionnel à afficher.
-        """
         pygame.display.set_caption("Game Over")
         self.manager.clear_and_reset()
 

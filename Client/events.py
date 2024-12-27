@@ -1,5 +1,5 @@
-
-
+from game import *
+from gui import *
 
 def handle_authentication_events(gui_manager, user):
     running = True
@@ -175,8 +175,7 @@ def handle_inactive_game_events(gui_manager, user):
 
     return True
 
-from game import *
-from gui import *
+
 
 def handle_playing_state(gui_manager, user):
     clock = pygame.time.Clock()
@@ -193,7 +192,8 @@ def handle_playing_state(gui_manager, user):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
+                print("[DEBUG] User closed the game window.")
+                return False  # Ferme complètement le client
 
             gui_manager.manager.process_events(event)
 
@@ -216,18 +216,32 @@ def handle_playing_state(gui_manager, user):
             gui_manager.show_board(board_state, cell_size, status_message="Your turn!")
         elif status == STATUS_WAIT_MOVE:
             user.current_state = WAITING_STATE
-            user.board_state = board_state  # Persiste l'état
-            return True
+            return True  # Retourne à l'état WAITING_STATE
         elif status == STATUS_INVALID_MOVE:
             gui_manager.show_board(board_state, cell_size, status_message="Invalid move. Try again!")
-        elif status == STATUS_VICTORY:
-            gui_manager.show_end_screen(is_winner=True, message=message)
-            user.current_state = LOBBY_STATE
-            return False
-        elif status == STATUS_LOST:
-            gui_manager.show_end_screen(is_winner=False, message=message)
-            user.current_state = LOBBY_STATE
-            return False
+        elif status in [STATUS_VICTORY, STATUS_LOST]:
+            is_winner = (status == STATUS_VICTORY)
+            return_btn = gui_manager.show_end_screen(is_winner=is_winner, message=message)
+
+            # Attendre que l'utilisateur clique sur "Back to Lobby"
+            waiting = True
+            while waiting:
+                time_delta = clock.tick(60) / 1000.0
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        print("[DEBUG] User closed the game window.")
+                        return False  # Ferme complètement le client
+                    gui_manager.manager.process_events(event)
+                    if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == return_btn:
+                        waiting = False
+
+                gui_manager.manager.update(time_delta)
+                gui_manager.screen.blit(gui_manager.background, (0, 0))
+                gui_manager.manager.draw_ui(gui_manager.screen)
+                pygame.display.update()
+
+            user.current_state = LOBBY_STATE  # Retour au lobby
+            return True
 
         gui_manager.manager.update(time_delta)
         gui_manager.screen.blit(gui_manager.background, (0, 0))
@@ -267,12 +281,26 @@ def handle_waiting_state(gui_manager, user):
         elif status == STATUS_MAKE_MOVE:
             user.current_state = PLAYING_STATE
             return True
-        elif status == STATUS_VICTORY:
-            gui_manager.show_end_screen(is_winner=True, message=message)
-            user.current_state = LOBBY_STATE
-            return False
-        elif status == STATUS_LOST:
-            gui_manager.show_end_screen(is_winner=False, message=message)
+        elif status in [STATUS_VICTORY, STATUS_LOST]:
+            is_winner = (status == STATUS_VICTORY)
+            return_btn = gui_manager.show_end_screen(is_winner=is_winner, message=message)
+
+            # Attendre que l'utilisateur clique sur "Back to Lobby"
+            waiting = True
+            while waiting:
+                time_delta = clock.tick(60) / 1000.0
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        return False
+                    gui_manager.manager.process_events(event)
+                    if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == return_btn:
+                        waiting = False
+
+                gui_manager.manager.update(time_delta)
+                gui_manager.screen.blit(gui_manager.background, (0, 0))
+                gui_manager.manager.draw_ui(gui_manager.screen)
+                pygame.display.update()
+
             user.current_state = LOBBY_STATE
             return False
 
@@ -280,6 +308,7 @@ def handle_waiting_state(gui_manager, user):
         gui_manager.screen.blit(gui_manager.background, (0, 0))
         gui_manager.manager.draw_ui(gui_manager.screen)
         pygame.display.update()
+
 
 
 
