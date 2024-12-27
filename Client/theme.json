@@ -1,0 +1,23 @@
+ {
+    "theme": {
+        "element_styles": {
+            "lbl": {
+                "font_size": 18,
+                "text_colour": "#FFFFFF"
+            },
+            "text_entry": {
+                "border_width": 2,
+                "border_colour": "#1E90FF"
+            },
+            "#login_btn": {
+                "font_size": 18,
+                "background_colour": "#32CD32",
+                "text_colour": "#FFFFFF"
+            },
+            "error_label": {
+                "font_size": 22,
+                "text_colour": "#FF0000"
+            }
+        }
+    }
+ }
