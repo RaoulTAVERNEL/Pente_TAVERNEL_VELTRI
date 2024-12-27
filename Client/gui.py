@@ -195,14 +195,12 @@ class GUIManager:
                 pygame.draw.line(self.background, pygame.Color('#000000'), rect.topleft, rect.bottomleft, 1)
                 pygame.draw.line(self.background, pygame.Color('#000000'), rect.topleft, rect.topright, 1)
 
-                # Dessiner les pions (ajustement ici pour redessiner correctement)
-                if board_state[y][x] == 1:  # Joueur 1
-                    pygame.draw.circle(self.background, pygame.Color('#000000'),
-                                       (rect.centerx, rect.centery),
+                # Dessiner les pions
+                if board_state[y][x] == 1:
+                    pygame.draw.circle(self.background, pygame.Color('#000000'), rect.center,
                                        cell_size // 2 - 2)  # Pion noir
-                elif board_state[y][x] == 2:  # Joueur 2
-                    pygame.draw.circle(self.background, pygame.Color('#FFFFFF'),
-                                       (rect.centerx, rect.centery),
+                elif board_state[y][x] == 2:
+                    pygame.draw.circle(self.background, pygame.Color('#FFFFFF'), rect.center,
                                        cell_size // 2 - 2)  # Pion blanc
 
         # Afficher un message en haut de l'écran
@@ -220,11 +218,10 @@ class GUIManager:
             manager=self.manager
         )
 
-        # Rafraîchir toute la surface graphique
-        self.screen.blit(self.background, (0, 0))
         pygame.display.flip()
-
         return abandon_btn, status_lbl, grid_offset_x, grid_offset_y
+
+
 
 
 
